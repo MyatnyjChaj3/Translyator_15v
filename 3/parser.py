@@ -71,12 +71,12 @@ class Parser:
 
     def parse(self):
         try:
-            self.parse_Язык()
+            self.parse_Lang()
         except Exception:
             pass
         return self.symbol_table, self.errors
 
-    def parse_Язык(self):
+    def parse_Lang(self):
         start_token = self.peek()
         if not start_token or start_token.type != 'KEYWORD_START':
             start_pos = start_token.start if start_token else 0
@@ -89,7 +89,7 @@ class Parser:
         found_mnozh = False
         while self.peek() and self.peek().type == 'KEYWORD_ARRAY':
             found_mnozh = True
-            self.parse_Множ()
+            self.parse_Mnozh()
         
         if not found_mnozh:
             next_token = self.peek()
@@ -101,7 +101,7 @@ class Parser:
 
         next_token = self.peek()
         if next_token and next_token.type == 'IDENTIFIER':
-            self.parse_Окончание()
+            self.parse_Okonch()
         else:
             tok = self.peek() or self.tokens[-1]
             error_val = f'"{tok.value}"' if tok else "конец файла"
@@ -130,7 +130,7 @@ class Parser:
             raise Exception("Fatal Error")
 
 
-    def parse_Множ(self):
+    def parse_Mnozh(self):
         array_token = self.consume('KEYWORD_ARRAY')
         if not self.peek() or self.peek().type not in ('NUMBER'):
             next_tok = self.peek() or array_token
@@ -139,16 +139,16 @@ class Parser:
             raise Exception("Empty Array block")
 
         while self.peek() and self.peek().type in ('NUMBER'):
-            self.parse_число()
+            self.parse_num()
 
-    def parse_число(self):
+    def parse_num(self):
         start_tok = self.peek()
         if self.peek(1) and self.peek(1).type == 'PUNCTUATION_DOT':
-            self.parse_вещ()
+            self.parse_vesch()
             if self.peek() and self.peek().type == 'PUNCTUATION_COMMA':
                 self.consume('PUNCTUATION_COMMA')
                 if self.peek() and self.peek().type == 'NUMBER' and self.peek(1) and self.peek(1).type == 'PUNCTUATION_DOT':
-                     self.parse_вещ()
+                    self.parse_vesch()
                 else:
                     tok = self.peek() or self.tokens[-1]
                     self.report_error('Неверный формат комплексного числа, после "," ожидалось вещ', tok.start, tok.end)
@@ -166,7 +166,7 @@ class Parser:
             self.report_error(f"Ожидалось число, но найдено '{start_tok.value}'", start_tok.start, start_tok.end)
             return None
 
-    def parse_вещ(self):
+    def parse_vesch(self):
         int_part = self.consume('NUMBER')
         if not int_part:
             tok = self.peek() or self.tokens[-1]
@@ -189,7 +189,7 @@ class Parser:
             self.report_error(f'Неверный формат числа "{int_part.value}.{frac_part.value}" (ожидались восьмеричные цифры от 0 до 7 включительно)', int_part.start, frac_part.end)
             return 0.0
     
-    def parse_Окончание(self):
+    def parse_Okonch(self):
         var_token = self.consume('IDENTIFIER')
         if not var_token:
             raise Exception("Fatal Error")
@@ -206,7 +206,7 @@ class Parser:
             self.report_error(f'Отсутствует "=" после переменной "{var_token.value}"', var_token.end, var_token.end + 1)
             raise Exception("Parsing Error")
 
-        value = self.parse_Прав_часть(depth=0)
+        value = self.parse_Right_part(depth=0)
         self.symbol_table[var_token.value] = value
 
     def check_missing_operator(self, last_token):
@@ -221,40 +221,40 @@ class Parser:
             self.report_error(f'Отсутствует арифметический оператор', last_token.end, next_tok.start)
             raise Exception("Missing operator")
 
-    def parse_Прав_часть(self, depth):
-        result = self.parse_Блок1(depth)
+    def parse_Right_part(self, depth):
+        result = self.parse_Blok1(depth)
         while self.peek() and self.peek().type in ('OPERATOR_PLUS', 'OPERATOR_MINUS'):
             op_token = self.consume('OPERATOR_PLUS', 'OPERATOR_MINUS')
             
             if not self.peek() or self.peek().type in ('OPERATOR_PLUS', 'OPERATOR_MINUS', 'OPERATOR_MULTIPLY', 'OPERATOR_DIVIDE', 'OPERATOR_POWER', 'KEYWORD_END', 'PUNCTUATION_RBRACKET'):
                 next_tok = self.peek()
                 if not next_tok or next_tok.type in ('KEYWORD_END', 'PUNCTUATION_RBRACKET'):
-                     self.report_error(f'После арифметического оператора "{op_token.value}" нет вещественного числа.', op_token.start, op_token.end)
+                    self.report_error(f'После арифметического оператора "{op_token.value}" нет вещественного числа.', op_token.start, op_token.end)
                 else:
                     self.report_error(f'Не могут следовать два оператора подряд ("{op_token.value}" и "{next_tok.value}").', op_token.start, next_tok.end)
                 raise Exception("Parsing Error")
 
-            right = self.parse_Блок1(depth)
+            right = self.parse_Blok1(depth)
             if op_token.type == 'OPERATOR_PLUS':
                 result += right
             else:
                 result -= right
         return result
 
-    def parse_Блок1(self, depth):
-        result = self.parse_Блок2(depth)
+    def parse_Blok1(self, depth):
+        result = self.parse_Blok2(depth)
         while self.peek() and self.peek().type in ('OPERATOR_MULTIPLY', 'OPERATOR_DIVIDE'):
             op_token = self.consume('OPERATOR_MULTIPLY', 'OPERATOR_DIVIDE')
 
             if not self.peek() or self.peek().type in ('OPERATOR_PLUS', 'OPERATOR_MINUS', 'OPERATOR_MULTIPLY', 'OPERATOR_DIVIDE', 'OPERATOR_POWER', 'KEYWORD_END', 'PUNCTUATION_RBRACKET'):
                 next_tok = self.peek()
                 if not next_tok or next_tok.type in ('KEYWORD_END', 'PUNCTUATION_RBRACKET'):
-                     self.report_error(f'После арифметического оператора "{op_token.value}" нет вещественного числа.', op_token.start, op_token.end)
+                    self.report_error(f'После арифметического оператора "{op_token.value}" нет вещественного числа.', op_token.start, op_token.end)
                 else:
                     self.report_error(f'Не могут следовать два оператора подряд ("{op_token.value}" и "{next_tok.value}").', op_token.start, next_tok.end)
                 raise Exception("Parsing Error")
 
-            right = self.parse_Блок2(depth)
+            right = self.parse_Blok2(depth)
             if op_token.type == 'OPERATOR_MULTIPLY':
                 result *= right
             else:
@@ -264,8 +264,8 @@ class Parser:
                 result /= right
         return result
 
-    def parse_Блок2(self, depth):
-        result = self.parse_Блок3(depth)
+    def parse_Blok2(self, depth):
+        result = self.parse_Blok3(depth)
         self.check_missing_operator(self.tokens[self.current_token_index - 1])
 
         while self.peek() and self.peek().type == 'OPERATOR_POWER':
@@ -274,17 +274,17 @@ class Parser:
             if not self.peek() or self.peek().type in ('OPERATOR_PLUS', 'OPERATOR_MINUS', 'OPERATOR_MULTIPLY', 'OPERATOR_DIVIDE', 'OPERATOR_POWER', 'KEYWORD_END', 'PUNCTUATION_RBRACKET'):
                 next_tok = self.peek()
                 if not next_tok or next_tok.type in ('KEYWORD_END', 'PUNCTUATION_RBRACKET'):
-                     self.report_error(f'После арифметического оператора "{op_token.value}" нет вещественного числа.', op_token.start, op_token.end)
+                    self.report_error(f'После арифметического оператора "{op_token.value}" нет вещественного числа.', op_token.start, op_token.end)
                 else:
                     self.report_error(f'Не могут следовать два оператора подряд ("{op_token.value}" и "{next_tok.value}").', op_token.start, next_tok.end)
                 raise Exception("Parsing Error")
 
-            right = self.parse_Блок3(depth)
+            right = self.parse_Blok3(depth)
             self.check_missing_operator(self.tokens[self.current_token_index - 1])
             result **= right
         return result
 
-    def parse_Блок3(self, depth):
+    def parse_Blok3(self, depth):
         token = self.peek()
 
         # FIX 4: Проверка на лишнюю закрывающую скобку
@@ -294,8 +294,8 @@ class Parser:
 
         # FIX 5: Проверка на недопустимые типы скобок
         if token.type in ('INVALID_LPAREN', 'INVALID_RPAREN', 'INVALID_LBRACE', 'INVALID_RBRACE'):
-             self.report_error(f"использование скобок '{token.value}' не допускается, используйте '[]'", token.start, token.end)
-             raise Exception("Invalid bracket type")
+            self.report_error(f"использование скобок '{token.value}' не допускается, используйте '[]'", token.start, token.end)
+            raise Exception("Invalid bracket type")
 
         # FIX 2: Обработка унарного минуса/плюса
         sign = 1
@@ -308,14 +308,14 @@ class Parser:
         if token.type == 'IDENTIFIER':
             var_token = self.consume('IDENTIFIER')
             if var_token.value not in self.declared_variables:
-                 self.report_error(f"Ошибка: переменная '{var_token.value}' не объявлена", var_token.start, var_token.end)
-                 return 0
+                self.report_error(f"Ошибка: переменная '{var_token.value}' не объявлена", var_token.start, var_token.end)
+                return 0
             return self.symbol_table.get(var_token.value, 0) * sign
 
         if token.type == 'NUMBER' and self.peek(1) and self.peek(1).type == 'PUNCTUATION_DOT':
             # Сохраняем начальный токен для полного значения в сообщении об ошибке
             start_num_token = token
-            value = self.parse_вещ()
+            value = self.parse_vesch()
             end_num_token = self.tokens[self.current_token_index - 1]
             # Создаем временный объект для передачи полного значения
             end_num_token.full_value = self.tokens[start_num_token.start:end_num_token.end+1]
@@ -331,7 +331,7 @@ class Parser:
                 self.report_error("глубина вложенности скобок не может превышать 2", token.start, token.end)
                 raise Exception("Nesting too deep")
             self.consume('PUNCTUATION_LBRACKET')
-            result = self.parse_Прав_часть(depth + 1)
+            result = self.parse_Right_part(depth + 1)
             
             if not self.peek() or self.peek().type != 'PUNCTUATION_RBRACKET':
                 tok = self.peek() or self.tokens[self.current_token_index-1]
