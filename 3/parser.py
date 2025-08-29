@@ -133,14 +133,99 @@ class Parser:
 
     def parse_Mnozh(self):
         array_token = self.consume('KEYWORD_ARRAY')
-        if not self.peek() or self.peek().type not in ('NUMBER'):
-            next_tok = self.peek() or array_token
-            pos = next_tok.end if next_tok else len(self.tokens[-1].value)
+        if not self.peek() or self.peek().type not in ('NUMBER', 'PUNCTUATION_DOT', 'PUNCTUATION_COMMA'):
+            pos = array_token.end
             self.report_error('после "Array" должно следовать хотя бы одно число', pos, pos + 1)
             raise Exception("Empty Array block")
 
-        while self.peek() and self.peek().type in ('NUMBER'):
-            self.parse_num()
+        while self.peek() and self.peek().type not in ('KEYWORD_ARRAY', 'KEYWORD_END', 'IDENTIFIER'):
+            self.parse_Mnozh_num()
+
+    def parse_Mnozh_num(self):
+        start_tok = self.peek()
+        
+        if start_tok.type == 'PUNCTUATION_COMMA':
+            self.report_error('Комплексное число не может начинаться с запятой', start_tok.start, start_tok.end)
+            raise Exception("Invalid complex number start")
+
+        if start_tok.type == 'PUNCTUATION_DOT':
+            self.report_error('Неверный формат вещественного числа, перед "." ожидалось цел', start_tok.start, start_tok.end)
+            raise Exception("Invalid real number start")
+
+        if start_tok.type != 'NUMBER':
+            self.report_error(f"В блоке 'Array' ожидалось число, но найдено '{start_tok.value}'", start_tok.start, start_tok.end)
+            raise Exception("Unexpected token in Array block")
+
+        int_part = self.consume('NUMBER')
+        
+        try:
+            int(int_part.value, 8)
+        except ValueError:
+            self.report_error(f'Неверный формат числа "{int_part.value}" (цифры от 0 до 7)', int_part.start, int_part.end)
+            raise Exception("Invalid octal number")
+
+        next_tok = self.peek()
+        if next_tok and next_tok.type == 'PUNCTUATION_DOT':
+            self.parse_Mnozh_vesch(int_part)
+        elif next_tok and next_tok.type == 'PUNCTUATION_COMMA':
+            self.report_error('Комплексное число должно начинаться с вещественного числа', int_part.start, next_tok.end)
+            raise Exception("Invalid complex number format")
+
+    def parse_Mnozh_vesch(self, int_part):
+        dot_token = self.consume('PUNCTUATION_DOT')
+        
+        frac_part_candidate = self.peek()
+        
+        # Проверяем, что дробная часть (если есть) не только существует и является числом,
+        # но и СЛЕДУЕТ НЕПОСРЕДСТВЕННО за точкой, без пробелов.
+        if not frac_part_candidate or frac_part_candidate.type != 'NUMBER' or frac_part_candidate.start != dot_token.end:
+            self.report_error('Вещественное число не может заканчиваться точкой. Ожидалась цифра после "."', int_part.start, dot_token.end)
+            raise Exception("Incomplete real number")
+
+        frac_part = self.consume('NUMBER')
+        try:
+            int(frac_part.value, 8)
+        except ValueError:
+            self.report_error(f'Неверный формат числа "{frac_part.value}" (цифры от 0 до 7)', frac_part.start, frac_part.end)
+            raise Exception("Invalid octal number")
+        
+        # Проверяем на комплексную часть, также с учетом смежности
+        comma_candidate = self.peek()
+        if comma_candidate and comma_candidate.type == 'PUNCTUATION_COMMA' and comma_candidate.start == frac_part.end:
+            self.parse_Mnozh_kompl(int_part, frac_part)
+
+    def parse_Mnozh_kompl(self, real_int_part, real_frac_part):
+        comma_token = self.consume('PUNCTUATION_COMMA')
+
+        imag_int_tok = self.peek(0)
+        imag_dot_tok = self.peek(1)
+        imag_frac_tok = self.peek(2)
+        
+        # Теперь проверяем не только тип токенов, но и их смежность (отсутствие пробелов)
+        is_valid_and_contiguous = (
+            imag_int_tok and imag_int_tok.type == 'NUMBER' and imag_int_tok.start == comma_token.end and
+            imag_dot_tok and imag_dot_tok.type == 'PUNCTUATION_DOT' and imag_dot_tok.start == imag_int_tok.end and
+            imag_frac_tok and imag_frac_tok.type == 'NUMBER' and imag_frac_tok.start == imag_dot_tok.end
+        )
+
+        if not is_valid_and_contiguous:
+            start_pos = comma_token.start
+            end_tok = self.peek() or self.tokens[-1]
+            self.report_error('Неверный формат комплексного числа, после "," ожидалось вещественное число (например, 1.2)', start_pos, end_tok.end)
+            raise Exception("Incomplete complex number")
+        
+        imag_int = self.consume('NUMBER')
+        self.consume('PUNCTUATION_DOT')
+        imag_frac = self.consume('NUMBER')
+        
+        try: int(imag_int.value, 8)
+        except ValueError:
+            self.report_error(f'Неверный формат числа "{imag_int.value}" (цифры от 0 до 7)', imag_int.start, imag_int.end)
+            raise Exception("Invalid octal number")
+        try: int(imag_frac.value, 8)
+        except ValueError:
+            self.report_error(f'Неверный формат числа "{imag_frac.value}" (цифры от 0 до 7)', imag_frac.start, imag_frac.end)
+            raise Exception("Invalid octal number")
 
     def parse_num(self):
         start_tok = self.peek()
