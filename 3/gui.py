@@ -86,7 +86,7 @@ class TranslatorGUI:
             return
 
         # 2. Синтаксический анализ
-        parser = Parser(tokens)
+        parser = Parser(tokens, input_code)
         symbol_table, parser_errors = parser.parse()
 
         if parser_errors:

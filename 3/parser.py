@@ -45,8 +45,9 @@ def format_value(value):
 
 
 class Parser:
-    def __init__(self, tokens):
+    def __init__(self, tokens, text):
         self.tokens = tokens
+        self.text = text
         self.current_token_index = 0
         self.errors = []
         self.symbol_table = {}
@@ -205,20 +206,30 @@ class Parser:
         if not equals_token:
             self.report_error(f'Отсутствует "=" после переменной "{var_token.value}"', var_token.end, var_token.end + 1)
             raise Exception("Parsing Error")
+        
+        next_tok = self.peek()
+        if next_tok and next_tok.type in ('OPERATOR_MULTIPLY', 'OPERATOR_DIVIDE', 'OPERATOR_POWER'):
+            self.report_error(f'Перед арифметическим оператором "{next_tok.value}" нет вещественного числа.', next_tok.start, next_tok.end)
+            raise Exception("Expression starts with invalid operator")
 
         value = self.parse_Right_part(depth=0)
         self.symbol_table[var_token.value] = value
 
     def check_missing_operator(self, last_token):
-        """FIX 3: Проверяет наличие оператора после значения."""
+        """Проверяет наличие оператора после значения."""
         next_tok = self.peek()
-        if next_tok and next_tok.type in ('IDENTIFIER', 'NUMBER', 'PUNCTUATION_LBRACKET'):
-            # Собрать полное значение для сообщения об ошибке (например, "4.1")
-            full_value = last_token.value
-            if hasattr(last_token, 'full_value'):
-                full_value = last_token.full_value
 
-            self.report_error(f'Отсутствует арифметический оператор', last_token.end, next_tok.start)
+        # ИЗМЕНЕНИЕ: Если следующий токен - это начало нового присваивания (перем =),
+        # то это не ошибка отсутствия оператора.
+        if next_tok and next_tok.type == 'IDENTIFIER' and self.peek(1) and self.peek(1).type == 'PUNCTUATION_EQUALS':
+            return
+
+        if next_tok and next_tok.type in ('IDENTIFIER', 'NUMBER', 'PUNCTUATION_LBRACKET'):
+            full_value = last_token.value
+            if hasattr(last_token, 'full_value_str'):
+                full_value = last_token.full_value_str
+
+            self.report_error(f'Отсутствует арифметический оператор между', last_token.end, next_tok.start)
             raise Exception("Missing operator")
 
     def parse_Right_part(self, depth):
@@ -239,6 +250,11 @@ class Parser:
                 result += right
             else:
                 result -= right
+        
+            next_tok = self.peek()
+            if depth == 0 and next_tok and next_tok.type == 'PUNCTUATION_RBRACKET':
+                self.report_error('отсутствует открывающая скобка "["', next_tok.start, next_tok.end)
+                raise Exception("Unmatched closing bracket at top level")
         return result
 
     def parse_Blok1(self, depth):
@@ -287,23 +303,17 @@ class Parser:
     def parse_Blok3(self, depth):
         token = self.peek()
 
-        # FIX 4: Проверка на лишнюю закрывающую скобку
-        if token.type == 'PUNCTUATION_RBRACKET':
-            self.report_error("Обнаружена закрывающая скобка ']' без соответствующей открывающей", token.start, token.end)
-            raise Exception("Unmatched closing bracket")
-
-        # FIX 5: Проверка на недопустимые типы скобок
+       
         if token.type in ('INVALID_LPAREN', 'INVALID_RPAREN', 'INVALID_LBRACE', 'INVALID_RBRACE'):
             self.report_error(f"использование скобок '{token.value}' не допускается, используйте '[]'", token.start, token.end)
             raise Exception("Invalid bracket type")
 
-        # FIX 2: Обработка унарного минуса/плюса
         sign = 1
         if token.type in ('OPERATOR_PLUS', 'OPERATOR_MINUS'):
             op_token = self.consume(token.type)
             if op_token.type == 'OPERATOR_MINUS':
                 sign = -1
-            token = self.peek() # Смотрим на следующий токен после знака
+            token = self.peek()
 
         if token.type == 'IDENTIFIER':
             var_token = self.consume('IDENTIFIER')
@@ -313,15 +323,22 @@ class Parser:
             return self.symbol_table.get(var_token.value, 0) * sign
 
         if token.type == 'NUMBER' and self.peek(1) and self.peek(1).type == 'PUNCTUATION_DOT':
-            # Сохраняем начальный токен для полного значения в сообщении об ошибке
             start_num_token = token
             value = self.parse_vesch()
+            
+            if self.peek() and self.peek().type == 'PUNCTUATION_COMMA':
+                comma_token = self.peek()
+                self.report_error(
+                    'в выражении допускаются только вещественные числа',
+                    start_num_token.start, 
+                    comma_token.end
+                )
+                raise Exception("Complex number in expression")
+
             end_num_token = self.tokens[self.current_token_index - 1]
-            # Создаем временный объект для передачи полного значения
-            end_num_token.full_value = self.tokens[start_num_token.start:end_num_token.end+1]
+            end_num_token.full_value_str = self.text[start_num_token.start:end_num_token.end]
             return value * sign
         
-        # FIX 1: Ошибка для целых чисел в выражении
         if token.type == 'NUMBER':
             self.report_error('в выражении допускаются только вещественные числа (например, 7.0)', token.start, token.end)
             raise Exception("Integer in expression")
@@ -338,7 +355,8 @@ class Parser:
                 self.report_error('отсутствует закрывающая скобка "]"', tok.start, tok.end)
                 raise Exception("Missing closing bracket")
 
-            self.consume('PUNCTUATION_RBRACKET')
+            bracket_token = self.consume('PUNCTUATION_RBRACKET')
+            bracket_token.full_value_str = f'[{result}]'
             return result * sign
 
         if token.type == 'PUNCTUATION_DOT':
